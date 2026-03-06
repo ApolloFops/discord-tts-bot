@@ -41,7 +41,7 @@ impl TypeMapKey for DECTalkBackendKey {
 }
 
 #[group]
-#[commands(deafen, join, leave, mute, undeafen, unmute)]
+#[commands(deafen, join, leave, mute, undeafen, unmute, speak)]
 struct General;
 
 #[tokio::main]
@@ -145,26 +145,12 @@ async fn join(ctx: &Context, msg: &Message) -> CommandResult {
         .clone();
 
     match manager.join(guild_id, connect_to).await {
-        Ok(handler_lock) => {
-            let mut handler = handler_lock.lock().await;
+        Ok(_handler) => {
             check_msg(
                 msg.channel_id
                     .say(&ctx.http, &format!("Joined {}", connect_to.mention()))
                     .await,
             );
-
-            let speech = {
-                let data_read = ctx.data.read().await;
-
-                let dectalk = data_read
-                    .get::<DECTalkBackendKey>()
-                    .expect("Expected DECTalkBackendKey in TypeMap.");
-
-                dectalk.get_tts("testing dectalk").await
-            };
-
-            let speech_track = handler.play_input(speech);
-            let _ = speech_track.set_volume(1.0);
         }
         Err(e) => {
             check_msg(
@@ -306,6 +292,42 @@ async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
         check_msg(
             msg.channel_id
                 .say(&ctx.http, "Not in a voice channel to unmute in")
+                .await,
+        );
+    }
+
+    Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+async fn speak(ctx: &Context, msg: &Message) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+
+        let speech = {
+            let data_read = ctx.data.read().await;
+
+            let dectalk = data_read
+                .get::<DECTalkBackendKey>()
+                .expect("Expected DECTalkBackendKey in TypeMap.");
+
+            dectalk.get_tts("testing dectalk").await
+        };
+
+        let speech_track = handler.play_input(speech);
+        let _ = speech_track.set_volume(1.0);
+    } else {
+        check_msg(
+            msg.channel_id
+                .say(&ctx.http, "Not in a voice channel to speak in")
                 .await,
         );
     }
